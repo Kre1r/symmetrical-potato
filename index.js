@@ -354,9 +354,16 @@ client.on('messageCreate', async (message) => {
   try {
     await message.channel.sendTyping();
 
-    const combinedSystemPrompt = `${PROMPTS[selectedPersona]}\n\n[MANDATORY DYNAMIC CONTEXT]:\n${RELATIONSHIPS[selectedRelationship]}`;
+    const combinedSystemPrompt = `${PROMPTS[selectedPersona]}
 
-    // Işık Hızında Yanıt Motoru (llama-3.1-8b-instant)
+[MANDATORY DYNAMIC CONTEXT]:
+${RELATIONSHIPS[selectedRelationship]}
+
+[STRICT REALISM & IMMERSION DIRECTIVE]:
+- Treat EVERYTHING the user says as absolute reality within your world and roleplay.
+- NEVER break character, NEVER mention that this is a roleplay, game, Discord server, or AI simulation.
+- React to the user's statements, actions, and emotions as if they are actually happening right in front of you. Stay 100% in-universe at all times.`;
+
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: 'system', content: combinedSystemPrompt },
