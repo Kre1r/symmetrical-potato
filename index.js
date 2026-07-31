@@ -6,7 +6,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers // Explicitly declared as requested
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -28,6 +28,17 @@ function getUserMemory(userId) {
     });
   }
   return userMemories.get(userId);
+}
+
+// Log kanalını bulma yardımcısı
+async function getVoteLogChannel(guild) {
+  const logChannelId = process.env.VOTE_LOG_CHANNEL_ID;
+  if (logChannelId) {
+    const channel = await client.channels.fetch(logChannelId).catch(() => null);
+    if (channel) return channel;
+  }
+  // Eğer ID verilmediyse isme göre #votelogs kanalını ara
+  return guild.channels.cache.find(c => c.name === 'votelogs');
 }
 
 const PROMPTS = {
@@ -173,7 +184,7 @@ async function startPersonaPoll(channel) {
   isVotingActive = true;
   selectedPersona = null;
   selectedRelationship = null;
-  userMemories.clear(); // Clear memories per user on reroll
+  userMemories.clear();
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('vote_devil').setLabel('Devil 😈').setStyle(ButtonStyle.Danger),
@@ -226,9 +237,10 @@ async function startPersonaPoll(channel) {
       }
     } catch (e) {}
 
+    const logChannel = await getVoteLogChannel(interaction.guild) || interaction.channel;
+
     if (votedUsers.has(interaction.user.id)) {
-      // PUBLIC feedback
-      return interaction.channel.send(`⚠️ <@${interaction.user.id}>, you have already voted!`).catch(() => {});
+      return logChannel.send(`⚠️ <@${interaction.user.id}>, you have already voted!`).catch(() => {});
     }
 
     votedUsers.add(interaction.user.id);
@@ -236,8 +248,8 @@ async function startPersonaPoll(channel) {
     const voteKey = interaction.customId.replace('vote_', '');
     if (votes[voteKey] !== undefined) {
       votes[voteKey]++;
-      // PUBLIC feedback message
-      await interaction.channel.send(`🗳️ **${interaction.user.username}** voted for **${voteKey.toUpperCase()}**!`).catch(() => {});
+      // 🎯 VOTES LOGGED TO #votelogs CHANNEL
+      await logChannel.send(`🗳️ **[STAGE 1]** **${interaction.user.username}** voted for **${voteKey.toUpperCase()}**!`).catch(() => {});
     }
   });
 
@@ -267,7 +279,14 @@ async function startPersonaPoll(channel) {
       selectedPersona = winners[0];
     }
 
-    await channel.send(`📊 **Stage 1 Winner:** **${selectedPersona.toUpperCase()}**!${tieMessage}\n\nMoving directly to **Stage 2: Relationship Dynamic**...`);
+    const stage1ResultMsg = `📊 **Stage 1 Winner:** **${selectedPersona.toUpperCase()}**!${tieMessage}\n\nMoving directly to **Stage 2: Relationship Dynamic**...`;
+    await channel.send(stage1ResultMsg);
+
+    const logChannel = await getVoteLogChannel(channel.guild);
+    if (logChannel && logChannel.id !== channel.id) {
+      await logChannel.send(`🏆 **[STAGE 1 FINISHED]** Winner: **${selectedPersona.toUpperCase()}**`).catch(() => {});
+    }
+
     await startRelationshipPoll(channel);
   });
 }
@@ -301,9 +320,10 @@ async function startRelationshipPoll(channel) {
       }
     } catch (e) {}
 
+    const logChannel = await getVoteLogChannel(interaction.guild) || interaction.channel;
+
     if (votedUsers.has(interaction.user.id)) {
-      // PUBLIC feedback
-      return interaction.channel.send(`⚠️ <@${interaction.user.id}>, you have already voted!`).catch(() => {});
+      return logChannel.send(`⚠️ <@${interaction.user.id}>, you have already voted!`).catch(() => {});
     }
 
     votedUsers.add(interaction.user.id);
@@ -311,8 +331,8 @@ async function startRelationshipPoll(channel) {
     const voteKey = interaction.customId.replace('rel_', '');
     if (votes[voteKey] !== undefined) {
       votes[voteKey]++;
-      // PUBLIC feedback message
-      await interaction.channel.send(`🗳️ **${interaction.user.username}** voted for **${voteKey.toUpperCase()}** dynamic!`).catch(() => {});
+      // 🎯 VOTES LOGGED TO #votelogs CHANNEL
+      await logChannel.send(`🗳️ **[STAGE 2]** **${interaction.user.username}** voted for **${voteKey.toUpperCase()}** dynamic!`).catch(() => {});
     }
   });
 
@@ -344,14 +364,19 @@ async function startRelationshipPoll(channel) {
 
     isVotingActive = false;
 
-    await channel.send(`🎉 **BOT CONFIGURATION COMPLETE!** 🎉\n👤 **Persona:** ${selectedPersona.toUpperCase()}\n💞 **Relationship:** ${selectedRelationship.toUpperCase()}${tieMessage}`);
+    const finalResultText = `🎉 **BOT CONFIGURATION COMPLETE!** 🎉\n👤 **Persona:** ${selectedPersona.toUpperCase()}\n💞 **Relationship:** ${selectedRelationship.toUpperCase()}${tieMessage}`;
+    await channel.send(finalResultText);
+
+    const logChannel = await getVoteLogChannel(channel.guild);
+    if (logChannel && logChannel.id !== channel.id) {
+      await logChannel.send(`🎉 **[POLL COMPLETE]** Final Selection -> Persona: **${selectedPersona.toUpperCase()}** | Relationship: **${selectedRelationship.toUpperCase()}**`).catch(() => {});
+    }
     
-    // 🎬 Starter Scene Generation
+    // Starter Scene Generation
     await generateStarterPrompt(channel);
   });
 }
 
-// 🎬 C.AI Starter Scene Generator
 async function generateStarterPrompt(channel) {
   try {
     await channel.sendTyping();
@@ -371,7 +396,6 @@ async function generateStarterPrompt(channel) {
   }
 }
 
-// 🧠 Per-User Lorebook Memory Update Function
 async function updatePerUserEpisodicMemory(userId, username, userMsg, aiMsg) {
   try {
     const memory = getUserMemory(userId);
@@ -392,10 +416,9 @@ AI: "${aiMsg}"`;
     const result = memoryRes.choices[0]?.message?.content?.trim();
     if (result && !result.includes("NONE")) {
       memory.episodic.push(result);
-      if (memory.episodic.length > 8) memory.episodic.shift(); // Maximum 8 key facts per user
+      if (memory.episodic.length > 8) memory.episodic.shift();
     }
   } catch (e) {
-    // Silent fail to maintain interaction speed
   }
 }
 
@@ -429,7 +452,6 @@ client.on('messageCreate', async (message) => {
     const username = message.member?.displayName || message.author.username;
     const userMem = getUserMemory(userId);
 
-    // 🏛️ Per-User Episodic Memory Injection
     let memoryBlock = "";
     if (userMem.episodic.length > 0) {
       memoryBlock = `\n[PERMANENT LOREBOOK MEMORY ABOUT ${username.toUpperCase()}]:\n- ${userMem.episodic.join('\n- ')}`;
@@ -451,10 +473,9 @@ ${memoryBlock}
 4. SENSORY DETAILS: Incorporate natural physical reactions, eye contact, tone adjustments, and movement in your *actions*.
 5. UNFORGIVING IN-UNIVERSE CONTINUITY: You have full emotional weight and memory of everything said specifically with ${username}. Stay 100% in character.`;
 
-    // 🧠 Per-User Short-Term History Buffer
     const apiMessages = [
       { role: 'system', content: combinedSystemPrompt },
-      ...userMem.history.slice(-14), // Last 14 messages dedicated to THIS SPECIFIC USER
+      ...userMem.history.slice(-14),
       { role: 'user', content: message.content.trim() }
     ];
 
@@ -469,13 +490,11 @@ ${memoryBlock}
 
     const replyMessage = chatCompletion.choices[0]?.message?.content || "No response generated.";
 
-    // Update user-specific short-term history
     userMem.history.push({ role: 'user', content: message.content.trim() });
     userMem.history.push({ role: 'assistant', content: replyMessage });
 
     await message.reply(replyMessage);
 
-    // Update user-specific permanent lorebook memory in the background
     updatePerUserEpisodicMemory(userId, username, message.content.trim(), replyMessage);
 
   } catch (error) {
