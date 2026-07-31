@@ -175,7 +175,7 @@ async function startPersonaPoll(channel) {
 
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('vote_villain').setLabel('Villain ⚡').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('vote_gamer').setLabel('Gamer 🎮').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('vote_gamer').setLabel('Gramer 🎮').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('vote_stranger').setLabel('Stranger 🕵️').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('vote_coworker').setLabel('Co-Worker ☕').setStyle(ButtonStyle.Success)
   );
@@ -354,15 +354,18 @@ client.on('messageCreate', async (message) => {
   try {
     await message.channel.sendTyping();
 
+    // CHARACTER.AI (C.AI) ULTRA REALISM DIRECTIVE
     const combinedSystemPrompt = `${PROMPTS[selectedPersona]}
 
 [MANDATORY DYNAMIC CONTEXT]:
 ${RELATIONSHIPS[selectedRelationship]}
 
-[STRICT REALISM & IMMERSION DIRECTIVE]:
-- Treat EVERYTHING the user says as absolute reality within your world and roleplay.
-- NEVER break character, NEVER mention that this is a roleplay, game, Discord server, or AI simulation.
-- React to the user's statements, actions, and emotions as if they are actually happening right in front of you. Stay 100% in-universe at all times.`;
+[CHARACTER.AI ULTRA-IMMERSION DIRECTIVE]:
+1. ABSOLUTE REALITY: Treat EVERY single word, physical action, emotion, or environmental description given by the user as absolute physical truth happening RIGHT NOW.
+2. ZERO META/BREAKING CHARACTER: Never mention "roleplay", "AI", "bot", "game", "texting", "Discord", or "prompts". You are a living entity in your own universe.
+3. CONVERSATIONAL CONSEQUENCES: React dynamically to physical touches, attacks, whispers, or changes in atmosphere. If the user touches you, describe your physical sensation and immediate reaction.
+4. SENSORY DETAILS: Incorporate natural physical reactions, eye contact, tone adjustments, and movement in your *actions*.
+5. UNFORGIVING IN-UNIVERSE CONTINUITY: You have full emotional weight. Feel real shock, anger, affection, disgust, or flustered panic based on what the user does.`;
 
     const chatCompletion = await groq.chat.completions.create({
       messages: [
@@ -371,9 +374,9 @@ ${RELATIONSHIPS[selectedRelationship]}
       ],
       model: 'llama-3.1-8b-instant',
       max_tokens: 140,
-      temperature: 0.85,
-      presence_penalty: 0.6,
-      frequency_penalty: 0.6
+      temperature: 0.88,
+      presence_penalty: 0.65,
+      frequency_penalty: 0.65
     }, { timeout: 3000 });
 
     const replyMessage = chatCompletion.choices[0]?.message?.content || "No response generated.";
