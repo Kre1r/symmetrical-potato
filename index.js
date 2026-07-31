@@ -11,9 +11,17 @@ const client = new Client({
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+// === GOD LEVEL MEMORY STATE ===
 let selectedPersona = null;
 let selectedRelationship = null;
 let isVotingActive = true;
+
+// 🧠 Kısa Süreli Hafıza (Short-Term Memory Buffer)
+let conversationHistory = []; 
+
+// 🏛️ God-Level Kalıcı Hafıza (Episodic Lorebook / Key Facts)
+// Kullanıcı ve bot arasındaki kritik olaylar, isimler ve sırlar burada birikir
+let episodicMemory = [];
 
 const PROMPTS = {
   devil: `[STRICT DIRECTIVE: DEVIL PERSONA]
@@ -158,6 +166,8 @@ async function startPersonaPoll(channel) {
   isVotingActive = true;
   selectedPersona = null;
   selectedRelationship = null;
+  conversationHistory = [];
+  episodicMemory = [];
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('vote_devil').setLabel('Devil 😈').setStyle(ButtonStyle.Danger),
@@ -175,7 +185,7 @@ async function startPersonaPoll(channel) {
 
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('vote_villain').setLabel('Villain ⚡').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('vote_gamer').setLabel('Gramer 🎮').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('vote_gamer').setLabel('Gamer 🎮').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('vote_stranger').setLabel('Stranger 🕵️').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('vote_coworker').setLabel('Co-Worker ☕').setStyle(ButtonStyle.Success)
   );
@@ -324,8 +334,60 @@ async function startRelationshipPoll(channel) {
 
     isVotingActive = false;
 
-    await channel.send(`🎉 **BOT CONFIGURATION COMPLETE!** 🎉\n👤 **Persona:** ${selectedPersona.toUpperCase()}\n💞 **Relationship:** ${selectedRelationship.toUpperCase()}${tieMessage}\n\nType any message to start talking (or type \`!reroll\` to reset configuration)!`);
+    await channel.send(`🎉 **BOT CONFIGURATION COMPLETE!** 🎉\n👤 **Persona:** ${selectedPersona.toUpperCase()}\n💞 **Relationship:** ${selectedRelationship.toUpperCase()}${tieMessage}`);
+    
+    // 🎬 C.AI STARTER PROMPT GENERATION (Açılış Sahnesi)
+    await generateStarterPrompt(channel);
   });
+}
+
+// 🎬 C.AI Tarzı Özel Başlangıç Sahnesi Üretici
+async function generateStarterPrompt(channel) {
+  try {
+    await channel.sendTyping();
+    const systemPrompt = `${PROMPTS[selectedPersona]}\n${RELATIONSHIPS[selectedRelationship]}\n\n[DIRECTIVE]: Generate an epic, atmospheric opening Roleplay scene (Starter Prompt) setting up the current environment and your attitude toward the user based on your persona and dynamic. Write exactly 2 immersive sentences in RP format (*action* "speech").`;
+
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [{ role: 'system', content: systemPrompt }],
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 150,
+      temperature: 0.9
+    }, { timeout: 3000 });
+
+    const starterText = chatCompletion.choices[0]?.message?.content || "*Looks at you silently, waiting for you to speak.* \"Well? What are you standing there for?\"";
+    
+    // Hafızayı Açılış Sahnesiyle Başlat
+    conversationHistory.push({ role: 'assistant', content: starterText });
+    await channel.send(starterText);
+  } catch (err) {
+    console.error("Starter Prompt Error:", err);
+  }
+}
+
+// 🧠 Arka Planda Önemli Bilgileri Hafızaya Kazıma Fonksiyonu (Lorebook Auto-Updater)
+async function updateEpisodicMemory(userMsg, aiMsg) {
+  try {
+    const memoryExtractorPrompt = `Analyze the conversation segment below. Extract ANY key facts, names, user background, promises, secrets, or emotional turns worth remembering permanently.
+If nothing crucial happened, reply with "NONE". If facts exist, write a brief bullet list (max 2 points).
+
+User: "${userMsg}"
+AI: "${aiMsg}"`;
+
+    const memoryRes = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: memoryExtractorPrompt }],
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 80,
+      temperature: 0.3
+    }, { timeout: 2000 });
+
+    const result = memoryRes.choices[0]?.message?.content?.trim();
+    if (result && !result.includes("NONE")) {
+      episodicMemory.push(result);
+      if (episodicMemory.length > 8) episodicMemory.shift(); // Max 8 kritik bilgi kaydı
+    }
+  } catch (e) {
+    // Arka plan işlemi olduğu için hata alırsa ana sohbeti akıcı tutmak için sessizce geçilir
+  }
 }
 
 client.once('ready', async () => {
@@ -344,7 +406,7 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   if (message.content.trim().toLowerCase() === '!reroll') {
-    await message.reply("🔄 **Rerolling configuration! Starting Stage 1 Poll...**");
+    await message.reply("🔄 **Resetting memory and rerolling configuration! Starting Stage 1 Poll...**");
     await startPersonaPoll(message.channel);
     return;
   }
@@ -354,26 +416,36 @@ client.on('messageCreate', async (message) => {
   try {
     await message.channel.sendTyping();
 
-    // CHARACTER.AI (C.AI) ULTRA REALISM DIRECTIVE
+    // 🏛️ Dynamic Memory Context Integration
+    let memoryBlock = "";
+    if (episodicMemory.length > 0) {
+      memoryBlock = `\n[PERMANENT LOREBOOK MEMORY (Key Facts You Remember About User & Past Events)]:\n- ${episodicMemory.join('\n- ')}`;
+    }
+
     const combinedSystemPrompt = `${PROMPTS[selectedPersona]}
 
 [MANDATORY DYNAMIC CONTEXT]:
 ${RELATIONSHIPS[selectedRelationship]}
+${memoryBlock}
 
-[CHARACTER.AI ULTRA-IMMERSION DIRECTIVE]:
+[CHARACTER.AI GOD-LEVEL IMMERSION DIRECTIVE]:
 1. ABSOLUTE REALITY: Treat EVERY single word, physical action, emotion, or environmental description given by the user as absolute physical truth happening RIGHT NOW.
 2. ZERO META/BREAKING CHARACTER: Never mention "roleplay", "AI", "bot", "game", "texting", "Discord", or "prompts". You are a living entity in your own universe.
 3. CONVERSATIONAL CONSEQUENCES: React dynamically to physical touches, attacks, whispers, or changes in atmosphere. If the user touches you, describe your physical sensation and immediate reaction.
 4. SENSORY DETAILS: Incorporate natural physical reactions, eye contact, tone adjustments, and movement in your *actions*.
-5. UNFORGIVING IN-UNIVERSE CONTINUITY: You have full emotional weight. Feel real shock, anger, affection, disgust, or flustered panic based on what the user does.`;
+5. UNFORGIVING IN-UNIVERSE CONTINUITY: You have full emotional weight and memory of everything said in conversation history and lorebook. Stay 100% in character.`;
+
+    // 🧠 Mesaj Geçmişini Derleme (Kısa Süreli Hafıza)
+    const apiMessages = [
+      { role: 'system', content: combinedSystemPrompt },
+      ...conversationHistory.slice(-14), // Son 14 mesajı (7 tur sohbet) tam hafızada tutar
+      { role: 'user', content: message.content.trim() }
+    ];
 
     const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        { role: 'system', content: combinedSystemPrompt },
-        { role: 'user', content: message.content.trim() || "Hello" }
-      ],
+      messages: apiMessages,
       model: 'llama-3.1-8b-instant',
-      max_tokens: 140,
+      max_tokens: 150,
       temperature: 0.88,
       presence_penalty: 0.65,
       frequency_penalty: 0.65
@@ -381,7 +453,15 @@ ${RELATIONSHIPS[selectedRelationship]}
 
     const replyMessage = chatCompletion.choices[0]?.message?.content || "No response generated.";
 
+    // Hafızayı Güncelle (Short-Term Buffer)
+    conversationHistory.push({ role: 'user', content: message.content.trim() });
+    conversationHistory.push({ role: 'assistant', content: replyMessage });
+
     await message.reply(replyMessage);
+
+    // Arka Planda Devasa Hafızayı Güncelle (Kalıcı Bilgileri Süzüp Kaydeder)
+    updateEpisodicMemory(message.content.trim(), replyMessage);
+
   } catch (error) {
     console.error("Groq/Discord Execution Error:", error);
     await message.reply("*(Looks away)* Sorry, I got a bit distracted... Try speaking to me again!").catch(() => {});
