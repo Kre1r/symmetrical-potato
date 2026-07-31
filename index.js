@@ -194,7 +194,6 @@ async function startPoll(channel) {
   });
 
   collector.on('collect', async (interaction) => {
-    // 2 saniye kuralı: Discord Zaman Aşımını anında engelliyoruz
     try {
       if (!interaction.deferred && !interaction.replied) {
         await interaction.deferUpdate();
@@ -264,24 +263,24 @@ client.on('messageCreate', async (message) => {
 
     const userContent = message.content.trim();
 
-    // Groq API çağrısına tam 2 saniye (2000ms) limit çekildi
+    // HIZLI MODEL: llama-3.1-8b-instant (Saniyeler içinde yanıt üretir)
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         { role: 'system', content: PROMPTS[selectedPersona] },
         { role: 'user', content: userContent || "Hello" }
       ],
-      model: 'llama-3.3-70b-versatile',
-      max_tokens: 120,
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 140,
       temperature: 0.85,
       presence_penalty: 0.6,
       frequency_penalty: 0.6
-    }, { timeout: 2000 });
+    }, { timeout: 3000 });
 
     const replyMessage = chatCompletion.choices[0]?.message?.content || "No response generated.";
 
     await message.reply(replyMessage);
   } catch (error) {
-    console.error("Bot Error:", error);
+    console.error("Groq API Error:", error);
     await message.reply("*(Looks away)* Sorry, I got a bit distracted... Try speaking to me again!").catch(() => {});
   }
 });
