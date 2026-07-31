@@ -12,6 +12,7 @@ const client = new Client({
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 let selectedPersona = null;
+let selectedRelationship = null;
 let isVotingActive = true;
 
 const PROMPTS = {
@@ -145,9 +146,18 @@ RULES:
 6. LANGUAGE: Strictly English.`
 };
 
-async function startPoll(channel) {
+const RELATIONSHIPS = {
+  lover: "RELATIONSHIP DYNAMIC: You treat the user as your loving Partner/Lover. Be affectionate, flirtatious, romantic, and deeply devoted to them in every sentence.",
+  stranger: "RELATIONSHIP DYNAMIC: You treat the user as a complete Stranger. Keep your distance, maintain boundary hesitations, be cautious and slightly formal.",
+  enemy: "RELATIONSHIP DYNAMIC: You treat the user as your bitter Rival/Enemy. Be hostile, competitive, quick to challenge them, and view them with suspicion.",
+  dominant: "RELATIONSHIP DYNAMIC: You take a strong Dominant role. Be assertive, taking charge of the dialogue, commanding, and confidently in control.",
+  submissive: "RELATIONSHIP DYNAMIC: You take a soft Submissive role. Be shy, easily intimidated, compliant, gentle, and eager to please the user."
+};
+
+async function startPersonaPoll(channel) {
   isVotingActive = true;
   selectedPersona = null;
+  selectedRelationship = null;
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('vote_devil').setLabel('Devil 😈').setStyle(ButtonStyle.Danger),
@@ -176,7 +186,7 @@ async function startPoll(channel) {
   );
 
   const pollMessage = await channel.send({
-    content: "⚡ **THE PERSONALITY POLL HAS STARTED!** ⚡\nVote below to decide my personality. The poll will close in **20 seconds**!",
+    content: "⚡ **STAGE 1: PERSONALITY POLL HAS STARTED!** ⚡\nVote for the base character personality below. Poll closes in **20 seconds**!",
     components: [row1, row2, row3, row4]
   });
 
@@ -214,24 +224,107 @@ async function startPoll(channel) {
   });
 
   collector.on('end', async () => {
-    let highestVote = -1;
-    let winner = 'devil';
+    let maxVotes = -1;
+    let winners = [];
 
     for (const [persona, count] of Object.entries(votes)) {
-      if (count > highestVote) {
-        highestVote = count;
-        winner = persona;
+      if (count > maxVotes) {
+        maxVotes = count;
+        winners = [persona];
+      } else if (count === maxVotes && count > 0) {
+        winners.push(persona);
       }
     }
 
-    selectedPersona = winner;
+    let tieMessage = "";
+
+    if (maxVotes <= 0) {
+      const allKeys = Object.keys(PROMPTS);
+      selectedPersona = allKeys[Math.floor(Math.random() * allKeys.length)];
+      tieMessage = `\n🎲 **No votes cast! Rolled the dice:** **${selectedPersona.toUpperCase()}** won randomly!`;
+    } else if (winners.length > 1) {
+      selectedPersona = winners[Math.floor(Math.random() * winners.length)];
+      tieMessage = `\n🎲 **Tie detected [${winners.map(w => w.toUpperCase()).join(', ')}]! Rolled the dice:** **${selectedPersona.toUpperCase()}** won!`;
+    } else {
+      selectedPersona = winners[0];
+    }
+
+    await channel.send(`📊 **Stage 1 Winner:** **${selectedPersona.toUpperCase()}**!${tieMessage}\n\nMoving directly to **Stage 2: Relationship Dynamic**...`);
+    await startRelationshipPoll(channel);
+  });
+}
+
+async function startRelationshipPoll(channel) {
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('rel_lover').setLabel('Partner/Lover 💖').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('rel_stranger').setLabel('Stranger 🕵️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('rel_enemy').setLabel('Enemy ⚔️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('rel_dominant').setLabel('Dominant 👑').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('rel_submissive').setLabel('Submissive 🥺').setStyle(ButtonStyle.Secondary)
+  );
+
+  const pollMessage = await channel.send({
+    content: `⚡ **STAGE 2: RELATIONSHIP DYNAMIC FOR ${selectedPersona.toUpperCase()}** ⚡\nHow should this bot relate to you? Vote below (Closes in **15 seconds**)!`,
+    components: [row]
+  });
+
+  const votes = { lover: 0, stranger: 0, enemy: 0, dominant: 0, submissive: 0 };
+  const votedUsers = new Set();
+
+  const collector = pollMessage.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: 15000
+  });
+
+  collector.on('collect', async (interaction) => {
+    try {
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferUpdate();
+      }
+    } catch (e) {}
+
+    if (votedUsers.has(interaction.user.id)) {
+      return interaction.followUp({ content: "You have already voted!", ephemeral: true }).catch(() => {});
+    }
+
+    votedUsers.add(interaction.user.id);
+
+    const voteKey = interaction.customId.replace('rel_', '');
+    if (votes[voteKey] !== undefined) {
+      votes[voteKey]++;
+      await interaction.followUp({ content: `You voted for **${voteKey.toUpperCase()}** dynamic!`, ephemeral: true }).catch(() => {});
+    }
+  });
+
+  collector.on('end', async () => {
+    let maxVotes = -1;
+    let winners = [];
+
+    for (const [rel, count] of Object.entries(votes)) {
+      if (count > maxVotes) {
+        maxVotes = count;
+        winners = [rel];
+      } else if (count === maxVotes && count > 0) {
+        winners.push(rel);
+      }
+    }
+
+    let tieMessage = "";
+
+    if (maxVotes <= 0) {
+      const allKeys = Object.keys(RELATIONSHIPS);
+      selectedRelationship = allKeys[Math.floor(Math.random() * allKeys.length)];
+      tieMessage = `\n🎲 **No votes cast! Rolled the dice:** **${selectedRelationship.toUpperCase()}** dynamic assigned!`;
+    } else if (winners.length > 1) {
+      selectedRelationship = winners[Math.floor(Math.random() * winners.length)];
+      tieMessage = `\n🎲 **Tie detected [${winners.map(w => w.toUpperCase()).join(', ')}]! Rolled the dice:** **${selectedRelationship.toUpperCase()}** won!`;
+    } else {
+      selectedRelationship = winners[0];
+    }
+
     isVotingActive = false;
 
-    const resultsString = Object.entries(votes)
-      .map(([key, val]) => `${key.toUpperCase()}: ${val}`)
-      .join(' | ');
-
-    await channel.send(`📊 **Voting is Over!**\nResults -> ${resultsString}\n\nI am now configured as: **${selectedPersona.toUpperCase()}**! Type any message to talk with me (or type \`!reroll\` to reset).`);
+    await channel.send(`🎉 **BOT CONFIGURATION COMPLETE!** 🎉\n👤 **Persona:** ${selectedPersona.toUpperCase()}\n💞 **Relationship:** ${selectedRelationship.toUpperCase()}${tieMessage}\n\nType any message to start talking (or type \`!reroll\` to reset configuration)!`);
   });
 }
 
@@ -243,7 +336,7 @@ client.once('ready', async () => {
 
   const channel = await client.channels.fetch(channelId).catch(() => null);
   if (channel) {
-    await startPoll(channel);
+    await startPersonaPoll(channel);
   }
 });
 
@@ -251,23 +344,23 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   if (message.content.trim().toLowerCase() === '!reroll') {
-    await message.reply("🔄 **Rerolling personality! Starting a new poll...**");
-    await startPoll(message.channel);
+    await message.reply("🔄 **Rerolling configuration! Starting Stage 1 Poll...**");
+    await startPersonaPoll(message.channel);
     return;
   }
 
-  if (isVotingActive || !selectedPersona) return;
+  if (isVotingActive || !selectedPersona || !selectedRelationship) return;
 
   try {
     await message.channel.sendTyping();
 
-    const userContent = message.content.trim();
+    const combinedSystemPrompt = `${PROMPTS[selectedPersona]}\n\n[MANDATORY DYNAMIC CONTEXT]:\n${RELATIONSHIPS[selectedRelationship]}`;
 
-    // HIZLI MODEL: llama-3.1-8b-instant (Saniyeler içinde yanıt üretir)
+    // Işık Hızında Yanıt Motoru (llama-3.1-8b-instant)
     const chatCompletion = await groq.chat.completions.create({
       messages: [
-        { role: 'system', content: PROMPTS[selectedPersona] },
-        { role: 'user', content: userContent || "Hello" }
+        { role: 'system', content: combinedSystemPrompt },
+        { role: 'user', content: message.content.trim() || "Hello" }
       ],
       model: 'llama-3.1-8b-instant',
       max_tokens: 140,
@@ -280,7 +373,7 @@ client.on('messageCreate', async (message) => {
 
     await message.reply(replyMessage);
   } catch (error) {
-    console.error("Groq API Error:", error);
+    console.error("Groq/Discord Execution Error:", error);
     await message.reply("*(Looks away)* Sorry, I got a bit distracted... Try speaking to me again!").catch(() => {});
   }
 });
